@@ -1,0 +1,17 @@
+{
+  "name": "chatbot-spike",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "jest src --watch"
+  },
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "babel-preset-flow": "^6.23.0",
+    "flow-bin": "^0.58.0",
+    "flow-typed": "^2.2.3",
+    "jest": "^21.2.1"
+  }
+}
