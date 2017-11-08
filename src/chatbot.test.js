@@ -9,8 +9,7 @@ type UnansweredQuestion = {|
   question: Question,
   conversationContext: Object, // addresses context use-case #1
   answerProcessorName: string,
-  answerProcessorOptions: Object, // addresses context use-case #2
-  answerProcessorContext: Object // addresses context use-case #3
+  answerProcessorOptions: Object // addresses context use-case #2
 |}
 
 type AnsweredQuestion = {
@@ -41,13 +40,22 @@ type Chatbot = {
   answer: (answer: Answer) => Promise<boolean>
 }
 
-const chatbot: ChatbotFactory = (answerProcessors, initialQuestion) => {
+const chatbot: ChatbotFactory = (
+  answerProcessors,
+  initialQuestion,
+  answerProcessorOptions
+) => {
   const bot: Chatbot = {
     conversation: {
       nextQuestion: initialQuestion,
-      answeredQuestions: []
+      answeredQuestions: [],
+      answerProcessorOptions
     },
     answer: async answerValue => {
+      if (!bot.conversation.nextQuestion) {
+        throw new Error('answer method invoked on completed conversation')
+      }
+
       const processorName = bot.conversation.nextQuestion.answerProcessorName
       const answerProcessor = answerProcessors[processorName]
       const updatedConversation = await answerProcessor(
@@ -65,22 +73,29 @@ const chatbot: ChatbotFactory = (answerProcessors, initialQuestion) => {
 
 // tests
 
-const question = (question, answerProcessorName) => ({
+const question = (
+  question,
+  answerProcessorName,
+  answerProcessorOptions = {}
+) => ({
   question,
   conversationContext: {},
   answerProcessorName,
-  answerProcessorOptions: {},
-  answerProcessorContext: {}
+  answerProcessorOptions
 })
 
-const nameQuestion = question('What is your name?', 'name-processor')
+const nameQuestion = question('What is your name?', 'name-processor', {})
 const nameProcessor: AnswerProcessor = (conversation, answer) => {
   if (!conversation.nextQuestion) {
     throw new Error('Answer processor invoked on completed conversation')
   }
 
+  const {
+    nextQuestion: { conversationContext, answerProcessorOptions }
+  } = conversation
+
   return Promise.resolve({
-    nextQuestion: ageQuestion,
+    nextQuestion: answerProcessorOptions.nextQuestion || ageQuestion,
     answeredQuestions: [
       ...conversation.answeredQuestions,
       { question: conversation.nextQuestion, answer }
@@ -88,15 +103,15 @@ const nameProcessor: AnswerProcessor = (conversation, answer) => {
   })
 }
 
+const optionedNameQuestion = answerProcessorOptions =>
+  question('What is your name?', 'name-processor', answerProcessorOptions)
+
 const ageQuestion = question('How old are you?', 'age-processor')
-const ageProcessor = (conversation, answer) =>
-  Promise.resolve({
-    nextQuestion: null,
-    answeredQuestions: [
-      ...conversation.answeredQuestions,
-      { question: conversation.nextQuestion, answer }
-    ]
-  })
+const locationQuestion = question('Where do you live?', 'location-processor')
+
+const minimalAnswerProcessors = {
+  'name-processor': nameProcessor
+}
 
 it('allows chatbots to be created with no answer processors', () => {
   const bot = chatbot({}, nameQuestion)
@@ -107,10 +122,7 @@ it('allows chatbots to be created with no answer processors', () => {
 })
 
 it('uses the answer processors to answer the questions', () => {
-  const answerProcessors = {
-    'name-processor': nameProcessor
-  }
-  const bot = chatbot(answerProcessors, nameQuestion)
+  const bot = chatbot(minimalAnswerProcessors, nameQuestion)
   return bot.answer('Marvin').then(() => {
     expect(bot.conversation).toEqual({
       nextQuestion: ageQuestion,
@@ -123,3 +135,34 @@ it('uses the answer processors to answer the questions', () => {
     })
   })
 })
+
+it.skip(
+  'allows answer processors to asynchronously validate answers before updating conversation'
+)
+it.skip(
+  'allows answer processors to asynchronously generate next question for conversation'
+)
+
+it('allows answer processors to vary their behaviour based on passed options', () => {
+  const initialQuestion = optionedNameQuestion({
+    nextQuestion: locationQuestion
+  })
+  const bot = chatbot(minimalAnswerProcessors, initialQuestion)
+  return bot.answer('Marvin').then(() => {
+    expect(bot.conversation).toEqual({
+      nextQuestion: locationQuestion,
+      answeredQuestions: [
+        {
+          question: initialQuestion,
+          answer: 'Marvin'
+        }
+      ]
+    })
+  })
+})
+
+it.skip(
+  'allows answer processors to provide context for the remaining conversation'
+)
+
+it.skip('allows answer processors to vary their behaviour based on context')
