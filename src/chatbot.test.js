@@ -1,24 +1,26 @@
 // @flow
 
 type Conversation = {
-  nextQuestion: UnansweredQuestion,
+  nextQuestion: ?UnansweredQuestion,
   answeredQuestions: Array<AnsweredQuestion>
 }
 
-type UnansweredQuestion = {
-  question: string,
+type UnansweredQuestion = {|
+  question: Question,
   conversationContext: Object, // addresses context use-case #1
   answerProcessorName: string,
   answerProcessorOptions: Object, // addresses context use-case #2
   answerProcessorContext: Object // addresses context use-case #3
-} | null
+|}
 
 type AnsweredQuestion = {
   question: UnansweredQuestion,
   answer: Answer
 }
 
-type Answer = Array<string>
+type Question = string
+
+type Answer = string
 
 type AnswerProcessor = (
   conversation: Conversation,
@@ -36,25 +38,88 @@ type ChatbotFactory = (
 
 type Chatbot = {
   conversation: Conversation,
-  answer: (answer: Answer) => void
+  answer: (answer: Answer) => Promise<boolean>
 }
 
-const chatbot: ChatbotFactory = (answerProcessors, initialQuestion) => ({
-  conversation: {
-    nextQuestion: initialQuestion,
-    answeredQuestions: []
-  },
-  answer: () => {
-    // TODO...
+const chatbot: ChatbotFactory = (answerProcessors, initialQuestion) => {
+  const bot: Chatbot = {
+    conversation: {
+      nextQuestion: initialQuestion,
+      answeredQuestions: []
+    },
+    answer: async answerValue => {
+      const processorName = bot.conversation.nextQuestion.answerProcessorName
+      const answerProcessor = answerProcessors[processorName]
+      const updatedConversation = await answerProcessor(
+        bot.conversation,
+        answerValue
+      )
+      bot.conversation = updatedConversation
+
+      return true
+    }
   }
-})
+
+  return bot
+}
 
 // tests
 
-it('allows chatbots to be created with no answer processors or an initial question', () => {
-  const bot = chatbot({}, null)
-  expect(bot.conversation).toEqual({
+const question = (question, answerProcessorName) => ({
+  question,
+  conversationContext: {},
+  answerProcessorName,
+  answerProcessorOptions: {},
+  answerProcessorContext: {}
+})
+
+const nameQuestion = question('What is your name?', 'name-processor')
+const nameProcessor: AnswerProcessor = (conversation, answer) => {
+  if (!conversation.nextQuestion) {
+    throw new Error('Answer processor invoked on completed conversation')
+  }
+
+  return Promise.resolve({
+    nextQuestion: ageQuestion,
+    answeredQuestions: [
+      ...conversation.answeredQuestions,
+      { question: conversation.nextQuestion, answer }
+    ]
+  })
+}
+
+const ageQuestion = question('How old are you?', 'age-processor')
+const ageProcessor = (conversation, answer) =>
+  Promise.resolve({
     nextQuestion: null,
+    answeredQuestions: [
+      ...conversation.answeredQuestions,
+      { question: conversation.nextQuestion, answer }
+    ]
+  })
+
+it('allows chatbots to be created with no answer processors', () => {
+  const bot = chatbot({}, nameQuestion)
+  expect(bot.conversation).toEqual({
+    nextQuestion: nameQuestion,
     answeredQuestions: []
+  })
+})
+
+it('uses the answer processors to answer the questions', () => {
+  const answerProcessors = {
+    'name-processor': nameProcessor
+  }
+  const bot = chatbot(answerProcessors, nameQuestion)
+  return bot.answer('Marvin').then(() => {
+    expect(bot.conversation).toEqual({
+      nextQuestion: ageQuestion,
+      answeredQuestions: [
+        {
+          question: nameQuestion,
+          answer: 'Marvin'
+        }
+      ]
+    })
   })
 })
